@@ -42,6 +42,7 @@ class PoseEstimatorDistiller(BaseModel, metaclass=ABCMeta):
             data_preprocessor=data_preprocessor,
             init_cfg=init_cfg)
         
+        # 教师模型进入eval() 并且不计算梯度 
         self.teacher = build_pose_estimator((Config.fromfile(teacher_cfg)).model)
         self.teacher_pretrained = teacher_pretrained
         self.teacher.eval()
@@ -58,8 +59,10 @@ class PoseEstimatorDistiller(BaseModel, metaclass=ABCMeta):
                     loss_name = item_loss.name
                     use_this = item_loss.use_this
                     if use_this:
+                        # 根据配置是否使用这个Loss 通道蒸馏和输出蒸馏可以各自单独开关
                         self.distill_losses[loss_name] = MODELS.build(item_loss)
 
+        # 是否第二阶段蒸馏
         self.two_dis = two_dis
         self.train_cfg = train_cfg if train_cfg else self.student.train_cfg
         self.test_cfg = self.student.test_cfg
@@ -109,12 +112,16 @@ class PoseEstimatorDistiller(BaseModel, metaclass=ABCMeta):
         losses = dict()
         
         with torch.no_grad():
+            # 教师模型 不计算梯度
             fea_t = self.teacher.extract_feat(inputs)
+            # 教师模型的 head输出 
             lt_x, lt_y = self.teacher.head(fea_t)
             pred_t = (lt_x, lt_y)
 
         if not self.two_dis:
             fea_s = self.student.extract_feat(inputs)
+            # 走 学生模型 的head , 并
+            # 返回原始的loss(非蒸馏)
             ori_loss, pred, gt, target_weight = self.head_loss(fea_s, data_samples, train_cfg=self.train_cfg)
             losses.update(ori_loss)
         else:
@@ -124,14 +131,20 @@ class PoseEstimatorDistiller(BaseModel, metaclass=ABCMeta):
 
         if 'loss_fea' in all_keys:
             loss_name = 'loss_fea'
+            # 通道蒸馏，只用最后一层的 也就是backbone最后一层输出的
             losses[loss_name] = self.distill_losses[loss_name](fea_s[-1], fea_t[-1])
             if not self.two_dis:
+                # 不是第二阶段蒸馏
+                # (1-self.epoch/self.max_epochs) 线性下降 
+                # 通道蒸馏
                 losses[loss_name] = (1-self.epoch/self.max_epochs)*losses[loss_name]
 
         if 'loss_logit' in all_keys:
             loss_name = 'loss_logit'
+            # 直接用学生模型的 原始loss的 温度因子 (self.student.head.loss_module.beta) 注意: 这个beta不是论文的loss权重因子,
             losses[loss_name] = self.distill_losses[loss_name](pred, pred_t, self.student.head.loss_module.beta, target_weight)
             if not self.two_dis:
+                # 输出蒸馏
                 losses[loss_name] = (1-self.epoch/self.max_epochs)*losses[loss_name]
 
         return losses
@@ -201,8 +214,10 @@ class PoseEstimatorDistiller(BaseModel, metaclass=ABCMeta):
     ) -> dict:
         """Calculate losses from a batch of inputs and data samples."""
 
+        # 学生输出的 simdr 坐标表示
         pred_x, pred_y = self.student.head.forward(feats)
 
+        # 下面是把GT打包成 batch形式? 增加batch维度?  应该是 keypoint_x_labels 本来就有batch维度, 然后这里合并起来dim=0? 
         gt_x = torch.cat([
             d.gt_instance_labels.keypoint_x_labels for d in batch_data_samples
         ],
@@ -222,6 +237,7 @@ class PoseEstimatorDistiller(BaseModel, metaclass=ABCMeta):
         pred_simcc = (pred_x, pred_y)
         gt_simcc = (gt_x, gt_y)
 
+        # 使用学生模型配置的loss (KLDiscretLoss 实际也是kl散度 )
         # calculate losses
         losses = dict()
         loss = self.student.head.loss_module(pred_simcc, gt_simcc, keypoint_weights)

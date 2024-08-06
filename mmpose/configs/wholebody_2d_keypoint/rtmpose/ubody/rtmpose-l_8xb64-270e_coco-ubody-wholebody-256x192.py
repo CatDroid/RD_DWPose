@@ -46,6 +46,7 @@ codec = dict(
     normalize=False,
     use_dark=False)
 
+# 这个是学生模型 
 # model settings
 model = dict(
     type='TopdownPoseEstimator',
@@ -56,15 +57,18 @@ model = dict(
         bgr_to_rgb=True),
     backbone=dict(
         _scope_='mmdet',
+        # backbone使用的是 CSPNeXt
         type='CSPNeXt',
         arch='P5',
         expand_ratio=0.5,
         deepen_factor=1.,
         widen_factor=1.,
+        # 需要backbone收集 哪些通道的输出  
         out_indices=(4, ),
         channel_attention=True,
         norm_cfg=dict(type='SyncBN'),
         act_cfg=dict(type='SiLU'),
+        # backbone 使用需先训练的参数初始化 ??
         init_cfg=dict(
             type='Pretrained',
             prefix='backbone.',
@@ -79,6 +83,7 @@ model = dict(
         in_featuremap_size=(6, 8),
         simcc_split_ratio=codec['simcc_split_ratio'],
         final_layer_kernel_size=7,
+        # RTMPose中提及的GAU neck 
         gau_cfg=dict(
             hidden_dims=256,
             s=128,
@@ -89,6 +94,9 @@ model = dict(
             use_rel_bias=False,
             pos_enc=False),
         loss=dict(
+            # Loss使用 KLDiscretLoss (Discret 离散) 用的是 nn.KLDivLoss(reduction='none') 
+            # ?? 不是 KDLoss (kd.py) 里面用的是 nn.KLDivLoss(reduction='none') ??
+            # mmpose/mmpose/models/losses/classification_loss.py
             type='KLDiscretLoss',
             use_target_weight=True,
             beta=10.,

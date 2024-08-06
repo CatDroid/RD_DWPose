@@ -150,6 +150,9 @@ def main():
         cfg.model.setdefault('data_preprocessor',
                              cfg.get('preprocess_cfg', {}))
 
+    # 
+    # mmengine的代码 ?? 怎么调到 distiller.py ??
+    # 
     # build the runner from config
     runner = Runner.from_cfg(cfg)
 

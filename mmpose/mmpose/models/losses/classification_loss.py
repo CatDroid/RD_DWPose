@@ -144,9 +144,13 @@ class KLDiscretLoss(nn.Module):
 
     def criterion(self, dec_outs, labels):
         """Criterion function."""
+        # predict都会softmax， 根据beta温度软化
         log_pt = self.log_softmax(dec_outs * self.beta)
         if self.label_softmax:
+            # GT根据参数 是否需要softmatx
             labels = F.softmax(labels * self.beta, dim=1)
+        
+        #  一个样本 在所有类别(width个bin 或者 height个bin)上的 kl散度均值 
         loss = torch.mean(self.kl_loss(log_pt, labels), dim=1)
         return loss
 
@@ -159,21 +163,36 @@ class KLDiscretLoss(nn.Module):
             gt_simcc (Tuple[Tensor, Tensor]): Target representations.
             target_weight (torch.Tensor[N, K] or torch.Tensor[N]):
                 Weights across different labels.
+
+        # 根据 distiller.py 的调用 传入是个元祖  第一个是x [B, K, width*spit?], 第二个是y  
+        pred_simcc = (pred_x, pred_y)
+        gt_simcc = (gt_x, gt_y)
+
+        # target_weight (torch.Tensor[N, K]  每个关键点的weight ? 不是 [N, K, width*spit?] 
         """
         num_joints = pred_simcc[0].size(1)
         loss = 0
 
+        # 是否使用weight
         if self.use_target_weight:
+            # 输出是一个一维张量，包含了 target_weight 中的所有元素。
+            # 新张量的长度等于原张量中元素的总数。
             weight = target_weight.reshape(-1)
         else:
             weight = 1.
 
         for pred, target in zip(pred_simcc, gt_simcc):
+            # pred_simcc是元祖 x,y 遍历
+            # [B, K, width] 
             pred = pred.reshape(-1, pred.size(-1))
             target = target.reshape(-1, target.size(-1))
 
+            # 只考虑有效关键点的loss的和  
+            # (criterion已经对 一个关键点上的kl散度做了均值
+            # (一个关键点x或者y坐标(样本)的KL散度均值)
             loss += self.criterion(pred, target).mul(weight).sum()
 
+        # 平均到每'种'关键点 
         return loss / num_joints
 
 

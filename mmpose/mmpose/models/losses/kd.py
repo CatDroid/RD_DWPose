@@ -35,6 +35,8 @@ class KDLoss(nn.Module):
         loss += (
             self.loss(ls_y, lt_y, beta, target_weight))
 
+        # 对每'种'关键点 做平均 (不区分x和y坐标) 
+        # --- 平均到 一个图片中 每‘种‘关键点的 平均KL散度 
         return loss / num_joints
 
     def loss(self, logit_s, logit_t, beta, weight):
@@ -47,12 +49,17 @@ class KDLoss(nn.Module):
             logit_s = logit_s.reshape(N * K, -1)
             logit_t = logit_t.reshape(N * K, -1)
 
+        # beta是温度因子  
         # N*W(H)
         s_i = self.log_softmax(logit_s * beta)
         t_i = F.softmax(logit_t * beta, dim=1)
 
+        # 跟 KLDiscretLoss 不同, 这里是 沿着 类别维度 求和 
         # kd
         loss_all = torch.sum(self.kl_loss(s_i, t_i), dim=1)
+        # --> loss平均到一个照片   (也考虑没有标注的点, 不会丢弃没标注的点)
+        # .sum(dim=1) -> (N, )
+        # .mean() -> (1,)
         loss_all = loss_all.reshape(N, K).sum(dim=1).mean()
         loss_all = self.weight * loss_all
 

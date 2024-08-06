@@ -48,9 +48,11 @@ class FeaLoss(nn.Module):
         return loss
 
     def get_dis_loss(self, preds_S, preds_T):
+        # 归约是求和 
         loss_mse = nn.MSELoss(reduction='sum')
         N, C, H, W = preds_T.shape
 
+        # 并没有求CHW的平均，只是平均到一个样本 (?估计是因为只用backbone最后一层的输出)
         dis_loss = loss_mse(preds_S, preds_T)/N*self.alpha_fea
 
         return dis_loss
